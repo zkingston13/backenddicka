@@ -33,6 +33,7 @@ Route::get('/lotes/no-ubicados', [LoteController::class, 'lotesNoUbicados']);
 // 4️⃣ Mostrar toda la info de un "lote" específico
 Route::get('/lotes/{id}', [LoteController::class, 'detalleLote']);
 
+ Route::get('/lotes/{id}/imprimir-etiquetas', [LoteController::class, 'imprimirEtiquetas']);
 // 📌 Rutas protegidas con autenticación
 Route::middleware(['auth:sanctum'])->group(function () {
 
@@ -58,7 +59,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // 🟢 Gestión de Lotes
     Route::apiResource('lotes', LoteController::class);
-    Route::post('/lotes/{id}/imprimir-etiquetas', [LoteController::class, 'imprimirEtiquetas']);
+   
     // 🟢 Buscar por "lote"
     Route::get('/lotes/buscar/{lote}', [LoteController::class, 'buscarPorLote']);
 

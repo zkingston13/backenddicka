@@ -13,7 +13,7 @@ class Cors
         // Define los orígenes permitidos
         $allowedOrigins = [
             'http://localhost:5173',
-            'http://192.168.137.1:5173',
+            'http://192.168.1.66:5173',
         ];
 
         // Obtén el origen de la solicitud
