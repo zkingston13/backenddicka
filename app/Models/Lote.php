@@ -10,6 +10,7 @@ class Lote extends Model
     use HasFactory;
 
     protected $fillable = [
+         'codigo',
         'folio',
         'producto_id',
         'lote',
@@ -18,6 +19,9 @@ class Lote extends Model
         'numPalets',
         'piezasPalet',
         'unidadMedida',
+        'operador',
+        'lt',
+        'placas',
         'observaciones',
         'usuario_id',
         'usuarioModificacion',

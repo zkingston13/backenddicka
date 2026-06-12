@@ -13,6 +13,7 @@ class LotePallet extends Model
 
     protected $fillable = [
         'lote_id',
+        'codigo',
         'num_pallet',
         'cantidad',
         'etiqueta_numero',

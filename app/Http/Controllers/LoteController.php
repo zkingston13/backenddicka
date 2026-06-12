@@ -16,6 +16,7 @@ use Illuminate\Database\QueryException;
 use Exception;
 use Mike42\Escpos\PrintConnectors\NetworkPrintConnector;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Str;
 
 class LoteController extends Controller
 {
@@ -23,7 +24,9 @@ class LoteController extends Controller
     public function index()
     {
         try {
+
             $lotes = Lote::with('producto')->get();
+          
 
             if ($lotes->isEmpty()) {
                 return response()->json(['message' => 'No hay lotes registrados'], 200);
@@ -52,6 +55,9 @@ class LoteController extends Controller
                 'numPalets' => 'required|integer|min:1',
                 'piezasPalet' => 'required|integer|min:1',
                 'unidadMedida' => 'required|string|max:50',
+                'operador' => 'required|string|max:255',
+                'lt' => 'required|string|max:255',
+                'placas' => 'required|string|max:255',
                 'observaciones' => 'nullable|string',
                 
             ]);
@@ -81,29 +87,43 @@ class LoteController extends Controller
 
             // 🔹 Calcular piezasLote antes de la creación
             $piezasLote = $validatedData['numPalets'] * $validatedData['piezasPalet'];
-
-            // 🔹 Crear lote con `piezasLote`
+            
+         
             $lote = Lote::create(array_merge($validatedData, [
+                
                 'usuario_id' => $usuario_id,
                 'piezasLote' => $piezasLote, // ✅ Se agrega antes de insertar
                 'ubi' => 'No Ubicado'
             ]));
 
-            // 🔹 Crear registros en `lote_pallets`
-            $lotePallets = [];
-            for ($i = 1; $i <= $validatedData['numPalets']; $i++) {
-                $lotePallets[] = [
-                    'lote_id' => $lote->id,
-                    'num_pallet' => $i,
-                    'cantidad' => $validatedData['piezasPalet'],
-                    'etiqueta_numero' => $i,
-                    'etiqueta_total' => $validatedData['numPalets'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                    
-                ];
-            }
-            LotePallet::insert($lotePallets); // ✅ Inserción masiva para mejor rendimiento
+$lotePallets = [];
+
+for ($i = 1; $i <= $validatedData['numPalets']; $i++) {
+
+ 
+    do {
+        $codigo =
+            rand(0, 9) .
+            strtoupper(Str::random(3)) .
+            '-' .
+            rand(0, 9) .
+            strtoupper(Str::random(5));
+
+    } while (LotePallet::where('codigo', $codigo)->exists());
+
+    $lotePallets[] = [
+        'lote_id' => $lote->id,
+        'codigo' => $codigo,
+        'num_pallet' => $i,
+        'cantidad' => $validatedData['piezasPalet'],
+        'etiqueta_numero' => $i,
+        'etiqueta_total' => $validatedData['numPalets'],
+        'created_at' => now(),
+        'updated_at' => now(),
+    ];
+}
+
+LotePallet::insert($lotePallets);
 
             return response()->json([
                 'message' => '✅ Lote registrado con éxito y pallets generados',
@@ -117,7 +137,7 @@ class LoteController extends Controller
             return response()->json(['error' => '❌ Error inesperado', 'detalles' => $e->getMessage()], 500);
         }
     }
-
+      
     public function show($id)
     {
         try {
@@ -147,6 +167,9 @@ class LoteController extends Controller
                 'piezasPalet' => 'nullable|integer|min:1',
                 'unidadMedida' => 'nullable|string|max:50',
                 'fechaRecibido' => 'nullable|date',
+                 'operador' => 'required|string|max:255',
+                'lt' => 'required|string|max:255',
+                'placas' => 'required|string|max:255',
                 'observaciones' => 'nullable|string'
             ]);
 
