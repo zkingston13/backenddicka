@@ -87,9 +87,12 @@
         <div class="etiqueta">
             @php
                 $qr = json_encode([
-                    'lote_id' => $lote->id,
+                    'lot'=> $lote->lote,
+                    'codigo_pallet' => $pallet->codigo,
                     'pallet_numero' => $pallet->etiqueta_numero,
                     'cantidad' => $pallet->cantidad,
+                    'producto' =>  $lote->producto->nombre,
+                    'fecha_ingreso' => $lote->fechaRecibido
                 ]);
             @endphp
             <div class="header">
