@@ -81,18 +81,22 @@
 <body>
 
     @foreach ($pallets as $pallet)
+        @php
+            $ubicacion = $lote->loteUbicaciones->firstWhere('pallet_numero', $pallet->etiqueta_numero);
+        @endphp
         <div class="logo-container">
             <img class="logo" src="{{ public_path('img/logo.png') }}" alt="Logo">
         </div>
         <div class="etiqueta">
             @php
                 $qr = json_encode([
-                    'lot'=> $lote->lote,
+                    'lot' => $lote->lote,
                     'codigo_pallet' => $pallet->codigo,
                     'pallet_numero' => $pallet->etiqueta_numero,
                     'cantidad' => $pallet->cantidad,
-                    'producto' =>  $lote->producto->nombre,
-                    'fecha_ingreso' => $lote->fechaRecibido
+                    'producto' => $lote->producto->nombre,
+                    'fecha_ingreso' => $lote->fechaRecibido,
+                    'ubicacion'=> $ubicacion->qr_ubicacion
                 ]);
             @endphp
             <div class="header">
@@ -117,8 +121,14 @@
                 <p><strong>CANTIDAD:</strong></p>
                 <p><strong>{{ $pallet->cantidad }}</strong></p>
                 <p><strong>FECHA DE INGRESO: {{ $lote->fechaRecibido }}</strong></p>
+
+
+                <p>
+                    <strong>UBICACIÓN:</strong>
+                    {{ $ubicacion->qr_ubicacion ?? 'SIN UBICACIÓN' }}
+                </p>
                 <div class="cont-cod">
-                    @foreach(str_split($pallet->codigo) as $char)
+                    @foreach (str_split($pallet->codigo) as $char)
                         {{ $char }}<br>
                     @endforeach
                 </div>

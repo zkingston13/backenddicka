@@ -246,7 +246,11 @@ LotePallet::insert($lotePallets);
     {
         try {
            
-            $lote = Lote::with(['producto.cliente'])->find($lote_id);
+           
+        $lote = Lote::with([
+    'producto.cliente',
+    'loteUbicaciones'
+])->find($lote_id);
             if (!$lote) {
                 return response()->json(['error' => 'Lote no encontrado']
                 , 404);
@@ -257,7 +261,8 @@ LotePallet::insert($lotePallets);
                 , 404);
             }
 
-            $pallets = LotePallet::where('lote_id', $lote_id)->get();
+
+$pallets = LotePallet::where('lote_id', $lote_id)->get();
 
             if ($pallets->isEmpty()) {
                 return response()->json(['error' => 'No hay pallets registrados para este lote']

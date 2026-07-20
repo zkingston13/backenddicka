@@ -27,4 +27,12 @@ class LotePallet extends Model
     {
         return $this->belongsTo(Lote::class);
     }
+    public function ubicacion()
+{
+    return $this->hasOne(
+        LoteUbicacion::class,
+        'pallet_numero',    
+        'etiqueta_numero'    
+    )->whereColumn('lote_ubicacions.lote_id', 'lote_pallets.lote_id');
+}
 }
