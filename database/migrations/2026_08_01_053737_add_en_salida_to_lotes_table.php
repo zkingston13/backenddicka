@@ -6,17 +6,23 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('lotes', function (Blueprint $table) {
-            $table->boolean('en_salida')->default(false);
+            //
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('lotes', function (Blueprint $table) {
-            $table->dropColumn('en_salida');
+            //
         });
     }
 };

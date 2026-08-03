@@ -32,8 +32,9 @@ Route::get('/lotes/no-ubicados', [LoteController::class, 'lotesNoUbicados']);
 
 // 4️⃣ Mostrar toda la info de un "lote" específico
 Route::get('/lotes/{id}', [LoteController::class, 'detalleLote']);
-
- Route::get('/lotes/{id}/imprimir-etiquetas', [LoteController::class, 'imprimirEtiquetas']);
+  
+ 
+Route::get('/lotes/{id}/etiquetas', [LoteController::class, 'imprimirEtiquetas']);
 // 📌 Rutas protegidas con autenticación
 Route::middleware(['auth:sanctum'])->group(function () {
 
@@ -60,7 +61,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // 🟢 Gestión de Lotes
     Route::apiResource('lotes', LoteController::class);
    
-    // 🟢 Buscar por "lote"
+  Route::post('/lotes/{id}/salida', [
+    SalidaController::class,
+    'moverLoteASalidas'
+]); 
+      // 🟢 Buscar por "lote"
     Route::get('/lotes/buscar/{lote}', [LoteController::class, 'buscarPorLote']);
 
     // 🟢 Mostrar todos los "lotes" con valor "Ubicado"
@@ -75,6 +80,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/lotes/{id}/recomendar', [LoteUbicacionController::class,'RecomendarUbicacionLote']);
     // 🟢 Cambiar el estatus de los lotes "No Ubicados"
     Route::put('/lotes/{id}/terminado', [LoteUbicacionController::class, 'terminarUbicacionLote']);
+    Route::get(
+    '/lotes/{loteId}/pallets/{palletNumero}/etiqueta',
+    [LoteController::class, 'imprimirEtiquetaPallet']
+);
     
     // 🟢 Gestión de Salidas
     Route::apiResource('salidas', SalidaController::class); // ✅ Mantiene todas las rutas REST
@@ -99,7 +108,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // 🟢 Dashboard
     Route::get('/dashboard', [DashboardController::class, 'obtenerEstadoAlmacen']);
 
-    
+    Route::get('/inventario', [LoteController::class, 'inventarioGeneral']);
+Route::get('/inventario/{sku}/lotes', [LoteController::class, 'desglosePorSku']);  
 });
 
 

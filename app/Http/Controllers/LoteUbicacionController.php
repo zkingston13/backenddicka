@@ -113,217 +113,375 @@ class LoteUbicacionController extends Controller
 
 public function recomendarUbicacionLote($loteId)
 {
-    $lote = Lote::with('producto')->find($loteId);
+    try {
+        $lote = Lote::with('producto')->find($loteId);
 
-    if (!$lote) {
-        return response()->json(['error' => 'Lote no encontrado'], 404);
-    }
+        if (!$lote) {
+            return response()->json([
+                'error' => 'Lote no encontrado'
+            ], 404);
+        }
 
-    $productoId = $lote->producto_id;
-    $paletsNecesarios = $lote->numPalets;
+        $productoId = $lote->producto_id;
+        $paletsNecesarios = $lote->numPalets;
 
-    $ubicacionesQuery = Ubicacion::where('estado', 'Vacio');
-    $reglaAplicada = "General";
+        // Ubicaciones que ya fueron confirmadas para este lote
+        $confirmadas = LoteUbicacion::where('lote_id', $lote->id)
+            ->orderBy('pallet_numero')
+            ->get([
+                'qr_ubicacion',
+                'pallet_numero'
+            ]);
 
-    // ================== REGLAS ESPECIALES ==================
+        $totalConfirmadas = $confirmadas->count();
+        $paletsPendientes = max(
+            $paletsNecesarios - $totalConfirmadas,
+            0
+        );
 
-    // 3 productos que van SOLO en niveles 1 (racks B-F)
-    $productosNivel1 = [3, 17, 18];
-    if (in_array($productoId, $productosNivel1)) {
-        $ubicacionesQuery
-            ->whereIn('rack', ['B','C','D','E','F'])
-            ->where('nivel', 1);
+        $ubicacionesQuery = Ubicacion::where('estado', 'Vacio');
+        $reglaAplicada = 'General';
 
-        $reglaAplicada = "Nivel 1 racks B-F (producto especial)";
-    }
+        // Productos que van solo en nivel 1, racks B-F
+        $productosNivel1 = [3, 17, 18];
 
-    // Producto exclusivo en E nivel 2
-    $productoEspecialE2 = 16;
-    if ($productoId == $productoEspecialE2) {
-        $ubicacionesQuery
-            ->where('rack','E')
-            ->where('nivel',2);
+        if (in_array($productoId, $productosNivel1)) {
+            $ubicacionesQuery
+                ->whereIn('rack', ['B', 'C', 'D', 'E', 'F'])
+                ->where('nivel', 1);
 
-        $reglaAplicada = "Rack E nivel 2 (producto especial)";
-    }
+            $reglaAplicada =
+                'Nivel 1 racks B-F (producto especial)';
+        }
 
-    // Productos exclusivos del nivel 2 del rack B
-    $productosNivel2B = [2, 5, 7, 11];
-    if (in_array($productoId, $productosNivel2B)) {
-        $ubicacionesQuery
-            ->where('rack','B')
-            ->where('nivel',2);
+        // Producto exclusivo en E nivel 2
+        $productoEspecialE2 = 16;
 
-        $reglaAplicada = "Rack B nivel 2 (producto especial)";
-    }
+        if ($productoId == $productoEspecialE2) {
+            $ubicacionesQuery
+                ->where('rack', 'E')
+                ->where('nivel', 2);
 
-    // ================== REGLA GENERAL ==================
-    if ($reglaAplicada === "General") {
+            $reglaAplicada =
+                'Rack E nivel 2 (producto especial)';
+        }
 
-        // ❗Excluir racks/niveles especiales
-        $ubicacionesQuery->where(function($q) use (
-            $productosNivel1, $productoEspecialE2, $productosNivel2B
+        // Productos exclusivos del nivel 2 del rack B
+        $productosNivel2B = [2, 5, 7, 11];
+
+        if (in_array($productoId, $productosNivel2B)) {
+            $ubicacionesQuery
+                ->where('rack', 'B')
+                ->where('nivel', 2);
+
+            $reglaAplicada =
+                'Rack B nivel 2 (producto especial)';
+        }
+
+        // Regla general
+        if ($reglaAplicada === 'General') {
+            $ubicacionesQuery->where(function ($q) {
+                // Excluir nivel 1 de racks B-F
+                $q->whereNot(function ($subQuery) {
+                    $subQuery
+                        ->whereIn(
+                            'rack',
+                            ['B', 'C', 'D', 'E', 'F']
+                        )
+                        ->where('nivel', 1);
+                });
+
+                // Excluir rack E, nivel 2
+                $q->whereNot(function ($subQuery) {
+                    $subQuery
+                        ->where('rack', 'E')
+                        ->where('nivel', 2);
+                });
+
+                // Excluir rack B, nivel 2
+                $q->whereNot(function ($subQuery) {
+                    $subQuery
+                        ->where('rack', 'B')
+                        ->where('nivel', 2);
+                });
+            });
+        }
+
+        $ubicaciones = $ubicacionesQuery->get();
+
+        if (
+            $ubicaciones->isEmpty() &&
+            $paletsPendientes > 0
         ) {
-            // Excluir nivel 1 racks B–F
-            $q->whereNot(function($s) {
-                $s->whereIn('rack', ['B','C','D','E','F'])
-                  ->where('nivel', 1);
+            return response()->json([
+                'error' => 'No hay ubicaciones disponibles',
+                'reglaAplicada' => $reglaAplicada,
+                'confirmadas' => $confirmadas->map(
+                    function ($registro) {
+                        return [
+                            'ubicacion' =>
+                                $registro->qr_ubicacion,
+                            'pallet_numero' =>
+                                $registro->pallet_numero,
+                            'ocupado' => true
+                        ];
+                    }
+                )->values()
+            ], 404);
+        }
+
+        // Orden rack → nivel → posición
+        $ordenadas = $ubicaciones
+            ->sortBy(function ($ubicacion) {
+                $ordenRacks = [
+                    'B' => 1,
+                    'C' => 2,
+                    'D' => 3,
+                    'E' => 4,
+                    'F' => 5,
+                    'G' => 6,
+                    'H' => 7,
+                    'I' => 8,
+                    'J' => 9
+                ];
+
+                $rackOrden =
+                    $ordenRacks[$ubicacion->rack] ?? 99;
+
+                $nivelOrden = $ubicacion->nivel;
+
+                $grupo = intdiv(
+                    $ubicacion->posicion - 1,
+                    4
+                );
+
+                $mapa = [1, 3, 2, 4];
+
+                $posicionEnGrupo =
+                    ($ubicacion->posicion - 1) % 4;
+
+                $ordenInterno = array_search(
+                    $posicionEnGrupo + 1,
+                    $mapa
+                );
+
+                return sprintf(
+                    '%02d-%02d-%04d',
+                    $rackOrden,
+                    $nivelOrden,
+                    ($grupo * 10) + $ordenInterno
+                );
+            })
+            ->values();
+
+        $pendientes = $ordenadas
+            ->take($paletsPendientes)
+            ->map(function ($ubicacion) {
+                return [
+                    'ubicacion' => $ubicacion->codigo,
+                    'rack' => $ubicacion->rack,
+                    'nivel' => $ubicacion->nivel,
+                    'posicion' => $ubicacion->posicion,
+                    'ocupado' => false
+                ];
             });
 
-            // Excluir E-2
-            $q->whereNot(function($s) {
-                $s->where('rack', 'E')
-                  ->where('nivel', 2);
-            });
+        $ocupadas = $confirmadas->map(
+            function ($registro) {
+                return [
+                    'ubicacion' =>
+                        $registro->qr_ubicacion,
+                    'pallet_numero' =>
+                        $registro->pallet_numero,
+                    'ocupado' => true
+                ];
+            }
+        );
 
-            // Excluir B-2
-            $q->whereNot(function($s) {
-                $s->where('rack', 'B')
-                  ->where('nivel', 2);
-            });
-        });
-    }
+        // Primero muestra las ya confirmadas y después las pendientes
+        $recomendaciones = $ocupadas
+            ->concat($pendientes)
+            ->values();
 
-    // Traer ubicaciones vacías
-    $ubicaciones = $ubicacionesQuery->get();
-
-    if ($ubicaciones->count() === 0) {
         return response()->json([
-            'error' => "No hay ubicaciones disponibles",
-            'reglaAplicada' => $reglaAplicada,
-        ], 404);
+            'mensaje' =>
+                "Regla aplicada: {$reglaAplicada}",
+            'paletsSolicitados' => $paletsNecesarios,
+            'paletsConfirmados' => $totalConfirmadas,
+            'paletsPendientes' => $paletsPendientes,
+            'completado' =>
+                $totalConfirmadas >= $paletsNecesarios,
+            'recomendaciones' => $recomendaciones
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' =>
+                'Error al generar recomendaciones',
+            'detalle' => $e->getMessage()
+        ], 500);
     }
-
-    // ================== ORDEN FINAL ==================
-    // Orden REAL: rack → nivel → posición (1,3,2,4…)
-    $ordenadas = $ubicaciones->sortBy(function ($u) {
-
-        // Orden por rack según el orden B,C,D,E,F,G,H,I,J
-        $ordenRacks = ['B'=>1,'C'=>2,'D'=>3,'E'=>4,'F'=>5,'G'=>6,'H'=>7,'I'=>8,'J'=>9];
-        $rackOrden = $ordenRacks[$u->rack] ?? 99;
-
-        // Nivel de menor a mayor
-        $nivelOrden = $u->nivel;
-
-        // Orden por posición 1,3,2,4,5,7,6,8...
-        $grupo = intdiv($u->posicion - 1, 4);
-        $map = [1,3,2,4];
-        $posEnGrupo = ($u->posicion - 1) % 4;
-        $ordenInterno = array_search($posEnGrupo + 1, $map);
-
-        return sprintf("%02d-%02d-%04d", $rackOrden, $nivelOrden, ($grupo*10)+$ordenInterno);
-    })->values();
-
-    // Seleccionar la cantidad necesaria
-    $recomendaciones = $ordenadas->take($paletsNecesarios);
-
-    return response()->json([
-        'mensaje' => "Regla aplicada: $reglaAplicada",
-        'paletsSolicitados' => $paletsNecesarios,
-        'recomendaciones' => $recomendaciones->map(function($u){
-            return [
-                'ubicacion' => $u->codigo,
-                'rack' => $u->rack,
-                'nivel' => $u->nivel,
-                'posicion' => $u->posicion,
-            ];
-        })->values()
-    ]);
 }
 
+public function terminarUbicacionLote(
+    Request $request,
+    $loteId
+) {
+    $validatedData = $request->validate([
+        'ubicacion' => 'required|string'
+    ]);
 
-public function terminarUbicacionLote($loteId)
-{
     DB::beginTransaction();
 
     try {
         $lote = Lote::find($loteId);
 
         if (!$lote) {
-            return response()->json(['error' => 'Lote no encontrado'], 404);
-        }
+            DB::rollBack();
 
-        if ($lote->ubi === "Ubicado") {
-            return response()->json(['error' => 'El lote ya está ubicado'], 400);
-        }
-
-        // Obtener recomendaciones del método actualizado
-        $respuesta = $this->recomendarUbicacionLote($loteId)->getData();
-
-        if (!isset($respuesta->recomendaciones) || count($respuesta->recomendaciones) == 0) {
-            return response()->json(['error' => 'No hay ubicaciones disponibles'], 400);
-        }
-
-        $recomendaciones = collect($respuesta->recomendaciones);
-
-        // Validar que existan suficientes ubicaciones
-        if ($recomendaciones->count() < $lote->numPalets) {
             return response()->json([
-                'error' => 'No hay ubicaciones suficientes para todos los palets',
-                'necesarias' => $lote->numPalets,
-                'disponibles' => $recomendaciones->count()
+                'error' => 'Lote no encontrado'
+            ], 404);
+        }
+
+        if ($lote->ubi === 'Ubicado') {
+            DB::rollBack();
+
+            return response()->json([
+                'error' =>
+                    'El lote ya está completamente ubicado'
             ], 400);
         }
 
-        // ========== ASIGNAR UBICACIONES ==========
+        $totalActual = LoteUbicacion::where(
+            'lote_id',
+            $lote->id
+        )->count();
 
-        foreach ($recomendaciones->take($lote->numPalets) as $index => $u) {
-
-            // Buscar la ubicación REAL en BD
-            $ubicacion = Ubicacion::where('rack', $u->rack)
-                ->where('nivel', $u->nivel)
-                ->where('posicion', $u->posicion)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$ubicacion) {
-                throw new \Exception("Ubicación no encontrada: {$u->ubicacion}");
-            }
-
-            if ($ubicacion->estado !== 'Vacio') {
-                throw new \Exception("Ubicación ya ocupada inesperadamente: {$u->ubicacion}");
-            }
-
-            // Registrar la ubicación del palet del lote
-            LoteUbicacion::create([
-                'lote_id' => $lote->id,
-                'pallet_numero' => $index + 1,
-                'piezasAlmacen' => 0,
-                'qr_ubicacion' => $ubicacion->codigo, // Asegúrate que existe el campo "codigo"
-                'usuario_id' => auth()->id() ?? 1
+        if ($totalActual >= $lote->numPalets) {
+            $lote->update([
+                'ubi' => 'Ubicado',
+                'usuarioModificacion' =>
+                    auth()->id()
             ]);
 
-            // Marcar ubicación como ocupada
-            $ubicacion->update([
-                'estado' => 'Ocupado',
-                'lote_id_ocupado' => $lote->id
-            ]);
+            DB::commit();
+
+            return response()->json([
+                'error' =>
+                    'Todos los pallets ya fueron ubicados',
+                'completado' => true,
+                'estado_lote' => 'Ubicado'
+            ], 400);
         }
 
-        // ========== ACTUALIZAR EL LOTE ==========
+        // Bloquear la posición seleccionada
+        $ubicacion = Ubicacion::where(
+            'codigo',
+            $validatedData['ubicacion']
+        )
+            ->lockForUpdate()
+            ->first();
 
+        if (!$ubicacion) {
+            DB::rollBack();
+
+            return response()->json([
+                'error' => 'Ubicación no encontrada'
+            ], 404);
+        }
+
+        if ($ubicacion->estado !== 'Vacio') {
+            DB::rollBack();
+
+            return response()->json([
+                'error' =>
+                    'La ubicación ya está ocupada'
+            ], 400);
+        }
+
+        $yaRegistrada = LoteUbicacion::where(
+            'lote_id',
+            $lote->id
+        )
+            ->where(
+                'qr_ubicacion',
+                $ubicacion->codigo
+            )
+            ->exists();
+
+        if ($yaRegistrada) {
+            DB::rollBack();
+
+            return response()->json([
+                'error' =>
+                    'La ubicación ya fue registrada para este lote'
+            ], 400);
+        }
+
+        $palletNumero = $totalActual + 1;
+
+        $registro = LoteUbicacion::create([
+            'lote_id' => $lote->id,
+            'pallet_numero' => $palletNumero,
+            'piezasAlmacen' =>
+                $lote->piezasPalet ?? 0,
+            'qr_ubicacion' => $ubicacion->codigo,
+            'usuario_id' => auth()->id() ?? 1,
+            'usuarioModificacion' => null
+        ]);
+
+        // Solo la ubicación física se marca como Ocupado
+        $ubicacion->update([
+            'estado' => 'Ocupado',
+            'lote_id_ocupado' => $lote->id
+        ]);
+
+        $totalRegistrados = LoteUbicacion::where(
+            'lote_id',
+            $lote->id
+        )->count();
+
+        $completado =
+            $totalRegistrados >= $lote->numPalets;
+
+        // El lote sigue como No Ubicado mientras falten pallets
         $lote->update([
-            'ubi' => 'Ubicado',
-            'usuarioModificacion' => auth()->id() ?? null
+            'ubi' =>
+                $completado
+                    ? 'Ubicado'
+                    : 'No Ubicado',
+            'usuarioModificacion' =>
+                auth()->id()
         ]);
 
         DB::commit();
 
         return response()->json([
-            'message' => 'Lote ubicado correctamente',
-            'lote' => $lote->id,
-            'ubicacionesAsignadas' => $recomendaciones->take($lote->numPalets)->values()
-        ]);
+            'message' =>
+                $completado
+                    ? 'Todos los pallets fueron ubicados correctamente'
+                    : 'Ubicación confirmada correctamente',
+            'ubicacion' => $ubicacion->codigo,
+            'pallet_numero' => $palletNumero,
+            'total_registrados' =>
+                $totalRegistrados,
+            'total_palets' => $lote->numPalets,
+            'completado' => $completado,
+            'estado_lote' =>
+                $completado
+                    ? 'Ubicado'
+                    : 'No Ubicado',
+            'registro' => $registro
+        ], 200);
 
     } catch (\Exception $e) {
         DB::rollBack();
+
         return response()->json([
             'error' => 'Error al ubicar el lote',
             'detalle' => $e->getMessage()
         ], 500);
     }
 }
-
-
-
 }
